@@ -21,6 +21,15 @@ async function main() {
     process.exit(1);
   }
 
+  // Connect to database
+  try {
+    await db.connect(connectionString);
+    console.error("Connected to SQL Anywhere database.");
+  } catch (error) {
+    console.error("Failed to connect to database:", error);
+    process.exit(1);
+  }
+
   // Create MCP server instance
   const server = new McpServer({
     name: "sqlanywhere-mcp-server",
