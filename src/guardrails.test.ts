@@ -1,4 +1,3 @@
-
 import { describe, it, expect } from "vitest";
 import { validateQuery } from "./guardrails.js";
 
@@ -7,14 +6,17 @@ describe("validateQuery", () => {
 
   describe("Read-only Guard (SELECT/WITH)", () => {
     it("should allow valid SELECT queries", () => {
-      const result = validateQuery("SELECT * FROM monitor.Part", authorizedUsers);
+      const result = validateQuery(
+        "SELECT * FROM monitor.Part",
+        authorizedUsers,
+      );
       expect(result.isValid).toBe(true);
     });
 
     it("should allow valid WITH queries", () => {
       const result = validateQuery(
         "WITH temp AS (SELECT * FROM monitor.Part) SELECT * FROM temp",
-        authorizedUsers
+        authorizedUsers,
       );
       expect(result.isValid).toBe(true);
     });
@@ -35,7 +37,9 @@ describe("validateQuery", () => {
       for (const q of queries) {
         const result = validateQuery(q, authorizedUsers);
         expect(result.isValid).toBe(false);
-        expect(result.error).toContain("Only SELECT or WITH queries are allowed");
+        expect(result.error).toContain(
+          "Only SELECT or WITH queries are allowed",
+        );
       }
     });
 
@@ -52,7 +56,7 @@ describe("validateQuery", () => {
         "SELECT * FROM (DELETE FROM monitor.Part)",
         "SELECT * FROM monitor.Part WHERE id = (UPDATE monitor.Part SET x=1)",
       ];
-      // Note: Some of these might be caught by the semicolon guard first, 
+      // Note: Some of these might be caught by the semicolon guard first,
       // but they should be rejected regardless.
       for (const q of dangerousQueries) {
         const result = validateQuery(q, authorizedUsers);
@@ -61,8 +65,11 @@ describe("validateQuery", () => {
     });
 
     it("should reject dangerous keywords even in different cases", () => {
-      const result = validateQuery("SELECT * FROM monitor.Part -- insert something", authorizedUsers);
-      // Wait, the regex \bkw\b might catch 'insert' even in comments. 
+      const result = validateQuery(
+        "SELECT * FROM monitor.Part -- insert something",
+        authorizedUsers,
+      );
+      // Wait, the regex \bkw\b might catch 'insert' even in comments.
       // This is a safety feature, though it might be slightly aggressive.
       expect(result.isValid).toBe(false);
       expect(result.error).toContain("Dangerous keyword 'INSERT' detected");
@@ -72,7 +79,10 @@ describe("validateQuery", () => {
       // 'Application' contains 'alter' (wait, no)
       // 'Created' contains 'create'
       // The \b boundary should prevent this.
-      const result = validateQuery("SELECT CreatedAt FROM monitor.Part", authorizedUsers);
+      const result = validateQuery(
+        "SELECT CreatedAt FROM monitor.Part",
+        authorizedUsers,
+      );
       expect(result.isValid).toBe(true);
     });
   });
@@ -101,7 +111,7 @@ describe("validateQuery", () => {
         "SELECT * FROM monitor.Part",
         "SELECT * FROM ExtensionsUser.Data",
         "SELECT * FROM dbo.Tables",
-        "SELECT * FROM \"monitor\".Part",
+        'SELECT * FROM "monitor".Part',
         "SELECT * FROM MONitor.Part",
       ];
       for (const q of queries) {
@@ -128,21 +138,36 @@ describe("validateQuery", () => {
       expect(result.isValid).toBe(true);
     });
 
+    it("should reject system tables without explicit owners (implied sys)", () => {
+      const result = validateQuery("SELECT * FROM SYSTABLE", authorizedUsers);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain("sys (implied)");
+    });
+
     it("should handle JOINs with owners", () => {
-      const q = "SELECT * FROM monitor.Part JOIN dbo.Orders ON monitor.Part.id = dbo.Orders.part_id";
+      const q =
+        "SELECT * FROM monitor.Part JOIN dbo.Orders ON monitor.Part.id = dbo.Orders.part_id";
       const result = validateQuery(q, authorizedUsers);
       expect(result.isValid).toBe(true);
     });
 
     it("should reject if any owner in a JOIN is unauthorized", () => {
-      const q = "SELECT * FROM monitor.Part JOIN sys.sysuser ON monitor.Part.id = sys.sysuser.id";
+      const q =
+        "SELECT * FROM monitor.Part JOIN sys.sysuser ON monitor.Part.id = sys.sysuser.id";
       const result = validateQuery(q, authorizedUsers);
       expect(result.isValid).toBe(false);
       expect(result.error).toContain("sys");
     });
-    
+
+    it("should reject unauthorized owners in comma-separated tables", () => {
+      const q = "SELECT * FROM monitor.Part, sys.sysuser";
+      const result = validateQuery(q, authorizedUsers);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain("sys");
+    });
+
     it("should handle mixed case and quotes for owners", () => {
-      const result = validateQuery("SELECT * FROM \"Dbo\".Part", authorizedUsers);
+      const result = validateQuery('SELECT * FROM "Dbo".Part', authorizedUsers);
       expect(result.isValid).toBe(true);
     });
   });

@@ -79,19 +79,30 @@ export function validateQuery(
 
   // 4. Guard: AUTHORIZED_USERS owner checks
   if (authorizedUsers.length > 0) {
-    // Find all [owner.]table references in FROM/JOIN clauses
+    // Find all [owner.]table references in FROM/JOIN clauses or comma-separated lists
     const fromJoinRegex =
-      /\b(FROM|JOIN)\s+(?:([a-zA-Z0-9_"]+)\.)?([a-zA-Z0-9_"]+)/gi;
+      /\b(FROM|JOIN|,)\s+(?:([a-zA-Z0-9_"]+)\.)?([a-zA-Z0-9_"]+)/gi;
     let match;
     const unauthorizedOwners = new Set<string>();
 
     while ((match = fromJoinRegex.exec(trimmedQuery)) !== null) {
       const owner = match[2];
+      const tableName = match[3];
+
       if (owner) {
         const cleanOwner = owner.replace(/"/g, "").toLowerCase();
         const authorizedLower = authorizedUsers.map((u) => u.toLowerCase());
         if (!authorizedLower.includes(cleanOwner)) {
           unauthorizedOwners.add(cleanOwner);
+        }
+      } else if (tableName) {
+        // If no owner is specified, check if it's a system table (starts with SYS)
+        // and if SYS is not in the authorized list.
+        const cleanTable = tableName.replace(/"/g, "").toLowerCase();
+        const authorizedLower = authorizedUsers.map((u) => u.toLowerCase());
+
+        if (cleanTable.startsWith("sys") && !authorizedLower.includes("sys")) {
+          unauthorizedOwners.add("sys (implied)");
         }
       }
     }
