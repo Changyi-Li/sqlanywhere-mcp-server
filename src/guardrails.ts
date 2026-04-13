@@ -79,31 +79,105 @@ export function validateQuery(
 
   // 4. Guard: AUTHORIZED_USERS owner checks
   if (authorizedUsers.length > 0) {
-    // Find all [owner.]table references in FROM/JOIN clauses or comma-separated lists
-    const fromJoinRegex =
-      /\b(FROM|JOIN|,)\s+(?:([a-zA-Z0-9_"]+)\.)?([a-zA-Z0-9_"]+)/gi;
-    let match;
+    const authorizedLower = authorizedUsers.map((u) => u.toLowerCase());
     const unauthorizedOwners = new Set<string>();
 
-    while ((match = fromJoinRegex.exec(trimmedQuery)) !== null) {
-      const owner = match[2];
-      const tableName = match[3];
+    // Strip comments to avoid false positives
+    const queryWithoutComments = trimmedQuery.replace(
+      /(--.*)|(\/\*[\s\S]*?\*\/)/g,
+      " ",
+    );
 
-      if (owner) {
-        const cleanOwner = owner.replace(/"/g, "").toLowerCase();
-        const authorizedLower = authorizedUsers.map((u) => u.toLowerCase());
-        if (!authorizedLower.includes(cleanOwner)) {
-          unauthorizedOwners.add(cleanOwner);
-        }
-      } else if (tableName) {
-        // If no owner is specified, check if it's a system table (starts with SYS)
-        // and if SYS is not in the authorized list.
-        const cleanTable = tableName.replace(/"/g, "").toLowerCase();
-        const authorizedLower = authorizedUsers.map((u) => u.toLowerCase());
+    // Tokenize roughly to identify keywords and identifiers
+    // This handles quoted identifiers, common SQL keywords, and operators
+    const tokenRegex =
+      /"[^"]*"|'[^']*'|\b(?:FROM|JOIN|WHERE|GROUP|ORDER|HAVING|LIMIT|UNION|INTERSECT|EXCEPT|ON|USING|SELECT|AS|WITH|APPLY|TABLE|VALUES)\b|[().,;.]|[^\s().,;.]+/gi;
+    const matches = queryWithoutComments.matchAll(tokenRegex);
+    const tokenList = Array.from(matches).map((m) => m[0]);
 
-        if (cleanTable.startsWith("sys") && !authorizedLower.includes("sys")) {
-          unauthorizedOwners.add("sys (implied)");
+    const tableStartKeywords = ["FROM", "JOIN", "APPLY"];
+    const tableEndKeywords = [
+      "WHERE",
+      "GROUP",
+      "ORDER",
+      "HAVING",
+      "LIMIT",
+      "UNION",
+      "INTERSECT",
+      "EXCEPT",
+      "ON",
+      "USING",
+      "SELECT",
+      "WITH",
+      "VALUES",
+      "(",
+      ")",
+      ";",
+    ];
+
+    let inTableContext = false;
+    let expectingTable = false;
+
+    for (let i = 0; i < tokenList.length; i++) {
+      const token = tokenList[i].toUpperCase();
+
+      // Start of a table reference section
+      if (tableStartKeywords.includes(token)) {
+        inTableContext = true;
+        expectingTable = true;
+        continue;
+      }
+
+      // End of a table reference section (transitioning to WHERE, ON, or nested query)
+      if (tableEndKeywords.includes(token)) {
+        inTableContext = false;
+        expectingTable = false;
+        continue;
+      }
+
+      // Comma in FROM clause continues the list of tables
+      if (token === ",") {
+        if (inTableContext) {
+          expectingTable = true;
         }
+        continue;
+      }
+
+      // If we are expecting a table name, it may be [owner.]table
+      if (expectingTable) {
+        let owner: string | null = null;
+        let tableName = tokenList[i];
+
+        // Check for owner.table pattern
+        if (i + 1 < tokenList.length && tokenList[i + 1] === ".") {
+          owner = tokenList[i];
+          if (i + 2 < tokenList.length) {
+            tableName = tokenList[i + 2];
+            i += 2; // Jump over dot and tableName
+          } else {
+            i += 1; // Jump over dot
+          }
+        }
+
+        if (owner) {
+          const cleanOwner = owner.replace(/"/g, "").toLowerCase();
+          if (!authorizedLower.includes(cleanOwner)) {
+            unauthorizedOwners.add(cleanOwner);
+          }
+        } else if (tableName) {
+          // If no owner, check if it's a system table (starts with sys)
+          const cleanTable = tableName.replace(/"/g, "").toLowerCase();
+          if (
+            cleanTable.startsWith("sys") &&
+            !authorizedLower.includes("sys")
+          ) {
+            unauthorizedOwners.add("sys (implied)");
+          }
+        }
+
+        // We've processed the table reference; subsequent tokens might be aliases
+        // until we hit a comma or a terminal keyword.
+        expectingTable = false;
       }
     }
 

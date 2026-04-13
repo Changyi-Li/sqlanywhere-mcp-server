@@ -166,9 +166,83 @@ describe("validateQuery", () => {
       expect(result.error).toContain("sys");
     });
 
-    it("should handle mixed case and quotes for owners", () => {
-      const result = validateQuery('SELECT * FROM "Dbo".Part', authorizedUsers);
+    it("should allow table aliases and column references using aliases (Regression Test)", () => {
+      const q = `
+        SELECT TOP 5 SR.SupplierCode, SR.Name, VR.TaxCode, VR.Percentage
+        FROM monitor.Supplier S
+        JOIN monitor.SupplierRoot SR ON S.RootId = SR.Id
+        LEFT JOIN monitor.VatRate VR ON S.VatRateId = VR.Id
+      `;
+      const result = validateQuery(q, authorizedUsers);
+      expect(result.isValid, `Error: ${result.error}`).toBe(true);
+    });
+
+    it("should allow column references with owners or aliases in SELECT list", () => {
+      const queries = [
+        "SELECT monitor.Part.Name FROM monitor.Part",
+        "SELECT p.Name FROM monitor.Part p",
+        "SELECT monitor.Part.Name, p.ID FROM monitor.Part p",
+      ];
+      for (const q of queries) {
+        const result = validateQuery(q, authorizedUsers);
+        expect(result.isValid, `Query failed: ${q}`).toBe(true);
+      }
+    });
+
+    it("should ignore owner-like patterns in WHERE and ON clauses", () => {
+      const queries = [
+        "SELECT * FROM monitor.Part WHERE Part.Name = 'test.owner'",
+        "SELECT * FROM monitor.T1 JOIN monitor.T2 ON T1.id = T2.id",
+        "SELECT * FROM monitor.T1 JOIN monitor.T2 ON monitor.T1.id = monitor.T2.id",
+      ];
+      for (const q of queries) {
+        const result = validateQuery(q, authorizedUsers);
+        expect(result.isValid, `Query failed: ${q}`).toBe(true);
+      }
+    });
+
+    it("should handle subqueries in FROM clause", () => {
+      const q = "SELECT * FROM (SELECT * FROM monitor.Part) AS sub";
+      const result = validateQuery(q, authorizedUsers);
       expect(result.isValid).toBe(true);
+    });
+
+    it("should reject unauthorized owners inside subqueries", () => {
+      const q =
+        "SELECT * FROM monitor.Part WHERE id IN (SELECT id FROM secret.data)";
+      const result = validateQuery(q, authorizedUsers);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain("secret");
+    });
+
+    it("should handle quoted owners and tables with spaces", () => {
+      const q = 'SELECT * FROM "monitor"."Supplier Table" AS S';
+      const result = validateQuery(q, authorizedUsers);
+      expect(result.isValid).toBe(true);
+    });
+
+    it("should handle complex JOIN syntax (LEFT/RIGHT/INNER/OUTER/CROSS)", () => {
+      const queries = [
+        "SELECT * FROM monitor.T1 LEFT OUTER JOIN monitor.T2 ON T1.id = T2.id",
+        "SELECT * FROM monitor.T1 RIGHT JOIN monitor.T2 USING (id)",
+        "SELECT * FROM monitor.T1 CROSS JOIN monitor.T2",
+      ];
+      for (const q of queries) {
+        const result = validateQuery(q, authorizedUsers);
+        expect(result.isValid, `Query failed: ${q}`).toBe(true);
+      }
+    });
+
+    it("should ignore unauthorized owners inside comments", () => {
+      const queries = [
+        "SELECT * FROM monitor.Part -- JOIN secret.table",
+        "SELECT * FROM monitor.Part /* secret.table */",
+        "SELECT * FROM monitor.Part -- monitor.Secret.Column",
+      ];
+      for (const q of queries) {
+        const result = validateQuery(q, authorizedUsers);
+        expect(result.isValid, `Query failed: ${q}`).toBe(true);
+      }
     });
   });
 });
