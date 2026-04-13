@@ -3,19 +3,19 @@ import { z } from "zod";
 import * as db from "../db.js";
 import { AUTHORIZED_USERS, ResponseFormat } from "./common.js";
 
-const ListTablesSchema = z
+const ListViewsSchema = z
   .object({
     search: z
       .string()
       .optional()
-      .describe("Search for tables by name substring (case-insensitive)"),
+      .describe("Search for views by name substring (case-insensitive)"),
     limit: z
       .number()
       .int()
       .min(1)
       .max(1000)
       .default(100)
-      .describe("Maximum tables to return"),
+      .describe("Maximum views to return"),
     offset: z
       .number()
       .int()
@@ -29,14 +29,14 @@ const ListTablesSchema = z
   })
   .strict();
 
-export function registerListTablesTool(server: McpServer) {
+export function registerListViewsTool(server: McpServer) {
   server.registerTool(
-    "sqlanywhere_list_tables",
+    "sqlanywhere_list_views",
     {
-      title: "List Tables",
+      title: "List Views",
       description:
-        "List all authorized tables in the SQL Anywhere database. Supports case-insensitive name filtering, pagination, and various response formats.",
-      inputSchema: ListTablesSchema,
+        "List all authorized views in the SQL Anywhere database. Supports case-insensitive name filtering, pagination, and various response formats.",
+      inputSchema: ListViewsSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -52,7 +52,7 @@ export function registerListTablesTool(server: McpServer) {
             u.user_name AS owner
           FROM sys.systab AS t
           JOIN sys.sysuser AS u ON t.creator = u.user_id
-          WHERE t.table_type_str = 'BASE'
+          WHERE t.table_type_str = 'VIEW'
         `;
         let parameters: any[] = [];
 
@@ -71,17 +71,14 @@ export function registerListTablesTool(server: McpServer) {
 
         const result = await db.query(sql, parameters);
         const total = result.length;
-        const tables = result.slice(
-          params.offset,
-          params.offset + params.limit,
-        );
+        const views = result.slice(params.offset, params.offset + params.limit);
 
-        if (!tables.length) {
+        if (!views.length) {
           return {
             content: [
               {
                 type: "text",
-                text: `No tables found matching '${params.search || ""}'`,
+                text: `No views found matching '${params.search || ""}'`,
               },
             ],
           };
@@ -89,29 +86,29 @@ export function registerListTablesTool(server: McpServer) {
 
         const output = {
           total,
-          count: tables.length,
+          count: views.length,
           offset: params.offset,
-          tables: tables.map((t: any) => ({
-            name: t.table_name,
-            owner: t.owner,
+          views: views.map((v: any) => ({
+            name: v.table_name,
+            owner: v.owner,
           })),
-          has_more: total > params.offset + tables.length,
-          ...(total > params.offset + tables.length
-            ? { next_offset: params.offset + tables.length }
+          has_more: total > params.offset + views.length,
+          ...(total > params.offset + views.length
+            ? { next_offset: params.offset + views.length }
             : {}),
         };
 
         let textContent: string;
         if (params.response_format === ResponseFormat.MARKDOWN) {
           const lines = [
-            `# Tables Matching '${params.search || "All"}'`,
+            `# Views Matching '${params.search || "All"}'`,
             "",
             `**Total Found**: ${total}`,
-            `**Showing Results**: ${params.offset + 1} to ${params.offset + tables.length}`,
+            `**Showing Results**: ${params.offset + 1} to ${params.offset + views.length}`,
             "",
-            `| Table Name | Owner |`,
-            `|------------|-------|`,
-            ...tables.map((t: any) => `| **${t.table_name}** | ${t.owner} |`),
+            `| View Name | Owner |`,
+            `|-----------|-------|`,
+            ...views.map((v: any) => `| **${v.table_name}** | ${v.owner} |`),
           ];
 
           if (output.has_more) {
@@ -134,7 +131,7 @@ export function registerListTablesTool(server: McpServer) {
           content: [
             {
               type: "text",
-              text: `Error listing tables: ${error instanceof Error ? error.message : String(error)}`,
+              text: `Error listing views: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
         };

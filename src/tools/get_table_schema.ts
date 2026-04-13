@@ -19,7 +19,7 @@ export function registerGetTableSchemaTool(server: McpServer) {
     {
       title: "Get Table Schema",
       description:
-        "Get comprehensive metadata for a specific SQL Anywhere table or view, including column definitions, data types, primary keys, and detailed foreign key relationships.",
+        "Get comprehensive metadata for a specific SQL Anywhere table, including column definitions, data types, primary keys, and detailed foreign key relationships.",
       inputSchema: GetTableSchemaSchema,
       annotations: {
         readOnlyHint: true,
@@ -34,16 +34,11 @@ export function registerGetTableSchemaTool(server: McpServer) {
         let existsSql = `
           SELECT
             t.table_name,
-            u.user_name AS owner,
-            CASE t.table_type_str
-              WHEN 'BASE' THEN 'Table'
-              WHEN 'VIEW' THEN 'View'
-              ELSE t.table_type_str
-            END AS type
+            u.user_name AS owner
           FROM sys.systab AS t
           JOIN sys.sysuser AS u ON t.creator = u.user_id
           WHERE t.table_name = ?
-            AND t.table_type_str IN ('BASE', 'VIEW')
+            AND t.table_type_str = 'BASE'
         `;
         const existsParams: any[] = [params.table_name];
 
@@ -156,7 +151,6 @@ export function registerGetTableSchemaTool(server: McpServer) {
         const output = {
           name: tableInfo.table_name,
           owner: tableInfo.owner,
-          type: tableInfo.type,
           columns: result,
           primary_keys: pkResult,
           foreign_keys: fkResult,
@@ -165,10 +159,9 @@ export function registerGetTableSchemaTool(server: McpServer) {
         let textContent: string;
         if (params.response_format === ResponseFormat.MARKDOWN) {
           const lines = [
-            `# Schema for ${tableInfo.type}: ${tableInfo.owner}.${tableInfo.table_name}`,
+            `# Schema for Table: ${tableInfo.owner}.${tableInfo.table_name}`,
             "",
             `**Owner**: ${tableInfo.owner}`,
-            `**Type**: ${tableInfo.type}`,
             "",
             `### Columns`,
             `| Column | Type | Width | Scale | Nullable | Default |`,
