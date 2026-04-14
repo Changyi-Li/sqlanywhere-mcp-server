@@ -19,7 +19,7 @@ export function registerGetViewSchemaTool(server: McpServer) {
     {
       title: "Get View Schema",
       description:
-        "Get metadata for a specific SQL Anywhere view, including column definitions, data types, and the view definition SQL.",
+        "Get metadata for a specific SQL Anywhere view, including column definitions and data types.",
       inputSchema: GetViewSchemaSchema,
       annotations: {
         readOnlyHint: true,
