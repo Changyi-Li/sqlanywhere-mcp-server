@@ -15,6 +15,10 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "test": "vitest run",
+    "smoke:stdio:mock": "tsx scripts/smoke-stdio-mock.ts",
+    "smoke:http:mock": "tsx scripts/smoke-http-mock.ts",
+    "smoke:stdio:live": "tsx scripts/smoke-stdio-live.ts",
+    "smoke:http:live": "tsx scripts/smoke-http-live.ts",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build"
   },
