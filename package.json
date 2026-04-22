@@ -1,5 +1,5 @@
 {
-  "name": "sqlanywhere-mcp-server",
+  "name": "@monitor-china/sqlanywhere-mcp-server",
   "version": "1.0.0",
   "description": "MCP server for SQL Anywhere database using ODBC",
   "type": "module",
